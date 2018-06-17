@@ -7,15 +7,16 @@ from baselines.common.misc_util import (
     set_global_seeds,
     boolean_flag,
 )
-import baselines.ddpg.training as training
-from baselines.ddpg.models import Actor, Critic
-from baselines.ddpg.memory import Memory
-from baselines.ddpg.noise import *
+import baselines.td3.training as training
+from baselines.td3.models import Actor, Critic, AHEActor, AHECritic
+from baselines.td3.memory import Memory
+from baselines.td3.noise import *
 
 import gym
 import tensorflow as tf
 from mpi4py import MPI
 
+# TODO: need to move the actor and critic to AHE version
 def run(env_id, seed, noise_type, layer_norm, evaluation, **kwargs):
     # Configure things.
     rank = MPI.COMM_WORLD.Get_rank()
@@ -55,8 +56,9 @@ def run(env_id, seed, noise_type, layer_norm, evaluation, **kwargs):
 
     # Configure components.
     memory = Memory(limit=int(1e6), action_shape=env.action_space.shape, observation_shape=env.observation_space.shape)
-    critic = Critic(layer_norm=layer_norm)
-    actor = Actor(nb_actions, layer_norm=layer_norm)
+    critic0 = AHECritic(layer_norm=layer_norm,name="primary critic")
+    critic1 = AHECritic(layer_norm=layer_norm,name="supplementary critic")
+    actor = AHEActor(nb_actions, layer_norm=layer_norm)
 
     # Seed everything to make things reproducible.
     seed = seed + 1000000 * rank
@@ -71,7 +73,7 @@ def run(env_id, seed, noise_type, layer_norm, evaluation, **kwargs):
     if rank == 0:
         start_time = time.time()
     training.train(env=env, eval_env=eval_env, param_noise=param_noise,
-        action_noise=action_noise, actor=actor, critic=critic, memory=memory, **kwargs)
+        action_noise=action_noise, actor=actor, critic0=critic0, critic1=critic1, memory=memory, **kwargs)
     env.close()
     if eval_env is not None:
         eval_env.close()

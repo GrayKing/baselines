@@ -115,10 +115,15 @@ def train(env, nb_epochs, nb_epoch_cycles, render_eval, reward_scale, render, pa
                         distance = agent.adapt_param_noise()
                         epoch_adaptive_distances.append(distance)
 
-                    cl, al = agent.train()
+                    # use take_update flag to control actor training
+                    take_update = t_train % policy_and_target_update_period
+                    cl, al = agent.train(take_update=take_update)
                     epoch_critic_losses.append(cl)
-                    epoch_actor_losses.append(al)
-                    agent.update_target_net()
+
+                    # use take_update flag to control target updating
+                    if take_update:
+                        epoch_actor_losses.append(al)
+                        agent.update_target_net()
 
                 # Evaluate.
                 eval_episode_rewards = []

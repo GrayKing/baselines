@@ -66,6 +66,7 @@ class TD3(object):
         gamma=0.99, tau=0.001, normalize_returns=False, enable_popart=False, normalize_observations=True,
         batch_size=128, observation_range=(-5., 5.), action_range=(-1., 1.), return_range=(-np.inf, np.inf),
         adaptive_param_noise=True, adaptive_param_noise_policy_threshold=.1,
+        action_noise_scale=0.2, action_noise_clip=0.5,
         critic_l2_reg=0., actor_lr=1e-4, critic_lr=1e-3, clip_norm=None, reward_scale=1.):
         # Inputs.
         self.obs0 = tf.placeholder(tf.float32, shape=(None,) + observation_shape, name='obs0')
@@ -101,6 +102,10 @@ class TD3(object):
         self.batch_size = batch_size
         self.stats_sample = None
         self.critic_l2_reg = critic_l2_reg
+
+        # remember the noise scale and clip
+        self.action_noise_scale = action_noise_scale
+        self.action_noise_clip = action_noise_clip
 
         # Observation normalization.
 
@@ -170,8 +175,12 @@ class TD3(object):
         # Q_obs1 Q(s',pi'(s)) is built from next state s'(observation), target actor pi', and denormalization  
 
         target_action = target_actor(normalized_obs1)
-        Q_obs1_val0 = denormalize(target_critic0(normalized_obs1, target_action), self.ret_rms)
-        Q_obs1_val1 = denormalize(target_critic1(normalized_obs1, target_action), self.ret_rms)
+        target_action_noise = tf.clip_by_value(tf.random_normal(
+            tf.shape(target_action), mean=0.0, stddev=action_noise_scale,dtype=tf.float32),
+            clip_value_min=-action_noise_clip,clip_value_max=action_noise_clip)
+        noisy_target_action = target_action + target_action_noise
+        Q_obs1_val0 = denormalize(target_critic0(normalized_obs1, noisy_target_action), self.ret_rms)
+        Q_obs1_val1 = denormalize(target_critic1(normalized_obs1, noisy_target_action), self.ret_rms)
 
         Q_obs = tf.reshape(tf.reduce_min(tf.concat([Q_obs1_val0,Q_obs1_val1],axis=1),axis=1),shape=[-1,1])
 
@@ -266,9 +275,6 @@ class TD3(object):
                 logger.info('  regularizing: {}'.format(var.name))
 
             logger.info('  applying l2 regularization with {}'.format(self.critic_l2_reg))
-
-            print("[Tiancheng] Reg Vars:", critic_reg_vars)
-            print("[Tiancheng] Trainable Vars:",self.critic_trainable_vars)
 
             critic_reg = tc.layers.apply_regularization(
                 tc.layers.l2_regularizer(self.critic_l2_reg),
@@ -379,7 +385,7 @@ class TD3(object):
         if self.normalize_observations:
             self.obs_rms.update(np.array([obs0]))
 
-    def train(self):
+    def train(self, take_update=True):
         # Get a batch.
         batch = self.memory.sample(batch_size=self.batch_size)
 
@@ -419,18 +425,29 @@ class TD3(object):
 
         # Get all gradients and perform a "synced update".(TODO)
         # compute the gradients of actor and critic
-        ops = [self.actor_grads, self.actor_loss, self.critic_grads, self.critic_loss]
-        actor_grads, actor_loss, critic_grads, critic_loss = self.sess.run(ops, feed_dict={
+
+        if take_update:
+            ops = [self.actor_grads, self.actor_loss, self.critic_grads, self.critic_loss]
+            actor_grads, actor_loss, critic_grads, critic_loss = self.sess.run(ops, feed_dict={
+                self.obs0: batch['obs0'],
+                self.actions: batch['actions'],
+                self.critic_target: target_Q,
+            })
+
+            self.actor_optimizer.update(actor_grads, stepsize=self.actor_lr)
+            self.critic_optimizer.update(critic_grads, stepsize=self.critic_lr)
+
+            return critic_loss, actor_loss
+
+        ops = [self.critic_grads, self.critic_loss]
+        critic_grads, critic_loss = self.sess.run(ops, feed_dict={
             self.obs0: batch['obs0'],
             self.actions: batch['actions'],
             self.critic_target: target_Q,
         })
-
-        # take an update step 
-        self.actor_optimizer.update(actor_grads, stepsize=self.actor_lr)
         self.critic_optimizer.update(critic_grads, stepsize=self.critic_lr)
 
-        return critic_loss, actor_loss
+        return critic_loss, 0
 
     def initialize(self, sess):
         self.sess = sess

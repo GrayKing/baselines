@@ -63,11 +63,11 @@ def get_perturbed_actor_updates(actor, perturbed_actor, param_noise_stddev):
 
 class TD3(object):
     def __init__(self, actor, critic0, critic1, memory, observation_shape, action_shape, param_noise=None, action_noise=None,
-        gamma=0.99, tau=0.001, normalize_returns=False, enable_popart=False, normalize_observations=True,
-        batch_size=128, observation_range=(-5., 5.), action_range=(-1., 1.), return_range=(-np.inf, np.inf),
+        gamma=0.99, tau=0.005, normalize_returns=False, enable_popart=False, normalize_observations=False,
+        batch_size=100, observation_range=(-5., 5.), action_range=(-1., 1.), return_range=(-np.inf, np.inf),
         adaptive_param_noise=True, adaptive_param_noise_policy_threshold=.1,
         action_noise_scale=0.2, action_noise_clip=0.5,
-        critic_l2_reg=0., actor_lr=1e-4, critic_lr=1e-3, clip_norm=None, reward_scale=1.):
+        critic_l2_reg=0., actor_lr=1e-3, critic_lr=1e-3, clip_norm=None, reward_scale=1.):
         # Inputs.
         self.obs0 = tf.placeholder(tf.float32, shape=(None,) + observation_shape, name='obs0')
         self.obs1 = tf.placeholder(tf.float32, shape=(None,) + observation_shape, name='obs1')
@@ -178,7 +178,8 @@ class TD3(object):
         target_action_noise = tf.clip_by_value(tf.random_normal(
             tf.shape(target_action), mean=0.0, stddev=action_noise_scale,dtype=tf.float32),
             clip_value_min=-action_noise_clip,clip_value_max=action_noise_clip)
-        noisy_target_action = target_action + target_action_noise
+        noisy_target_action = tf.clip_by_value(target_action + target_action_noise,
+                                               clip_value_min=action_range[0],clip_value_max=action_range[1])
         Q_obs1_val0 = denormalize(target_critic0(normalized_obs1, noisy_target_action), self.ret_rms)
         Q_obs1_val1 = denormalize(target_critic1(normalized_obs1, noisy_target_action), self.ret_rms)
 

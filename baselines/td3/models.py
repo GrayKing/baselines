@@ -1,6 +1,8 @@
 import tensorflow as tf
 import tensorflow.contrib as tc
 
+from tensorflow.contrib.layers import xavier_initializer
+
 
 class Model(object):
     def __init__(self, name):
@@ -89,18 +91,18 @@ class AHEActor(Model):
                 scope.reuse_variables()
 
             x = obs
-            x = tf.layers.dense(x, 400)
+            x = tf.layers.dense(x, 400, kernel_initializer=xavier_initializer())
             if self.layer_norm:
                 x = tc.layers.layer_norm(x, center=True, scale=True)
             x = tf.nn.relu(x)
 
-            x = tf.layers.dense(x, 300)
+            x = tf.layers.dense(x, 300, kernel_initializer=xavier_initializer())
             if self.layer_norm:
                 x = tc.layers.layer_norm(x, center=True, scale=True)
             x = tf.nn.relu(x)
 
             x = tf.layers.dense(x, self.nb_actions,
-                                kernel_initializer=tf.random_uniform_initializer(minval=-3e-3, maxval=3e-3))
+                                kernel_initializer=xavier_initializer())
             x = tf.nn.tanh(x)
         return x
 
@@ -116,18 +118,18 @@ class AHECritic(Model):
                 scope.reuse_variables()
 
             x = obs
-            x = tf.layers.dense(x, 400)
+            x = tf.layers.dense(x, 400,  kernel_initializer=xavier_initializer())
             if self.layer_norm:
                 x = tc.layers.layer_norm(x, center=True, scale=True)
             x = tf.nn.relu(x)
 
             x = tf.concat([x, action], axis=-1)
-            x = tf.layers.dense(x, 300)
+            x = tf.layers.dense(x, 300,  kernel_initializer=xavier_initializer())
             if self.layer_norm:
                 x = tc.layers.layer_norm(x, center=True, scale=True)
             x = tf.nn.relu(x)
 
-            x = tf.layers.dense(x, 1, kernel_initializer=tf.random_uniform_initializer(minval=-3e-3, maxval=3e-3))
+            x = tf.layers.dense(x, 1, kernel_initializer=xavier_initializer())
         return x
 
     @property

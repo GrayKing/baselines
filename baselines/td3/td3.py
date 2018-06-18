@@ -146,16 +146,14 @@ class TD3(object):
         
         # actor_tf pi(s) is built from the actor and normalized_obs0 
         self.actor_tf = actor(normalized_obs0)
-        # TODO: add some noise to make a SARSA like actor
 
         # normalized_critic_tf normalized Q(s,a) is built from the observation and action 
         # two normalized critic functions Q0(s,a) and Q1(s,a)
         self.normalized_critic_tf0 = critic0(normalized_obs0, self.actions)
         self.normalized_critic_tf1 = critic1(normalized_obs0, self.actions)
 
-        # critic_tf Q(s,a) is built from denomailization and clipping from normalized Q(s,a)
-        # two critic functions Q0(s,a) and Q1(s,a)-
-        # TODO: is td3 using clipping ?
+        # critic_tf Q(s,a) is built from de-normalization and clipping from normalized Q(s,a)
+        # two critic functions Q0(s,a) and Q1(s,a)
         self.critic_tf0 = denormalize(tf.clip_by_value(self.normalized_critic_tf0, self.return_range[0], self.return_range[1]), self.ret_rms)
         self.critic_tf1 = denormalize(tf.clip_by_value(self.normalized_critic_tf1, self.return_range[0], self.return_range[1]), self.ret_rms)
 
@@ -163,7 +161,7 @@ class TD3(object):
         self.normalized_critic_with_actor_tf0 = critic0(normalized_obs0, self.actor_tf, reuse=True)
         self.normalized_critic_with_actor_tf1 = critic1(normalized_obs0, self.actor_tf, reuse=True)
 
-        # critic_with_actor_tf is built from denormalization and clipping from normalized Q(s,pi(s))
+        # critic_with_actor_tf is built from de-normalization and clipping from normalized Q(s,pi(s))
         # original scale Q0(s,pi(s)) Q1(s,pi(s))
         self.critic_with_actor_tf0 = denormalize(
             tf.clip_by_value(self.normalized_critic_with_actor_tf0, self.return_range[0], self.return_range[1]),
@@ -259,8 +257,9 @@ class TD3(object):
         logger.info('setting up critic optimizer')
 
         # normalize critc target, normalized y
-        normalized_critic_target_tf = tf.clip_by_value(normalize(self.critic_target, self.ret_rms), self.return_range[0], self.return_range[1])
-        
+        normalized_critic_target_tf = tf.clip_by_value(normalize(self.target_Q, self.ret_rms), self.return_range[0], self.return_range[1])
+        normalized_critic_target_tf = tf.stop_gradient(normalized_critic_target_tf)
+
         # Use square error between normalized_critic_tf normalized Q(s,a) and normalized critic_target y
         # ( not use denormalized version ) as loss function, for two different critic, we need to train them both
         self.critic_loss0 = tf.reduce_mean(tf.square(self.normalized_critic_tf0 - normalized_critic_target_tf))
@@ -360,7 +359,7 @@ class TD3(object):
 
     # compute the action from the observation pi(s)
     #   has an option to compute the q function at the same time 
-    def pi(self, obs, apply_noise=True, compute_Q=True):
+    def pi(self, obs, apply_noise=True, compute_Q=False):
         if self.param_noise is not None and apply_noise:
             actor_tf = self.perturbed_actor_tf
         else:
@@ -390,63 +389,61 @@ class TD3(object):
         # Get a batch.
         batch = self.memory.sample(batch_size=self.batch_size)
 
-        if self.normalize_returns and self.enable_popart:
-            # compute old mean, old std and target Q values 
-            # old mean and std is used for normalization 
-            # and target Q values for 
-            old_mean, old_std, Q0, Q1, target_Q = self.sess.run([self.ret_rms.mean, self.ret_rms.std, self.target_Q0,self.target_Q1,self.target_Q], feed_dict={
-                self.obs1: batch['obs1'],
-                self.rewards: batch['rewards'],
-                self.terminals1: batch['terminals1'].astype('float32'),
-            })
+        # if self.normalize_returns and self.enable_popart:
+        #     # compute old mean, old std and target Q values
+        #     # old mean and std is used for normalization
+        #     # and target Q values for
+        #     old_mean, old_std, Q0, Q1, target_Q = self.sess.run([self.ret_rms.mean, self.ret_rms.std, self.target_Q0,self.target_Q1,self.target_Q], feed_dict={
+        #         self.obs1: batch['obs1'],
+        #         self.rewards: batch['rewards'],
+        #         self.terminals1: batch['terminals1'].astype('float32'),
+        #     })
+        #
+        #     # compute something (TODO)
+        #     self.ret_rms.update(target_Q.flatten())
+        #     self.sess.run(self.renormalize_Q_outputs_op, feed_dict={
+        #         self.old_std : np.array([old_std]),
+        #         self.old_mean : np.array([old_mean]),
+        #     })
+        #
+        #     # Run sanity check. Disabled by default since it slows down things considerably.
+        #     # print('running sanity check')
+        #     # target_Q_new, new_mean, new_std = self.sess.run([self.target_Q, self.ret_rms.mean, self.ret_rms.std], feed_dict={
+        #     #     self.obs1: batch['obs1'],
+        #     #     self.rewards: batch['rewards'],
+        #     #     self.terminals1: batch['terminals1'].astype('float32'),
+        #     # })
+        #     # print(target_Q_new, target_Q, new_mean, new_std)
+        #     # assert (np.abs(target_Q - target_Q_new) < 1e-3).all()
+        # else:
+        #     # compute target Q value functions ( ( 1 - terminal ) * gamma * Q(s,pi(s)) + r )
+        #     Q0, Q1, target_Q = self.sess.run([self.target_Q0,self.target_Q1,self.target_Q], feed_dict={
+        #         self.obs1: batch['obs1'],
+        #         self.rewards: batch['rewards'],
+        #         self.terminals1: batch['terminals1'].astype('float32'),
+        #     })
 
-            # compute something (TODO)  
-            self.ret_rms.update(target_Q.flatten())
-            self.sess.run(self.renormalize_Q_outputs_op, feed_dict={
-                self.old_std : np.array([old_std]),
-                self.old_mean : np.array([old_mean]),
-            })
-
-            # Run sanity check. Disabled by default since it slows down things considerably.
-            # print('running sanity check')
-            # target_Q_new, new_mean, new_std = self.sess.run([self.target_Q, self.ret_rms.mean, self.ret_rms.std], feed_dict={
-            #     self.obs1: batch['obs1'],
-            #     self.rewards: batch['rewards'],
-            #     self.terminals1: batch['terminals1'].astype('float32'),
-            # })
-            # print(target_Q_new, target_Q, new_mean, new_std)
-            # assert (np.abs(target_Q - target_Q_new) < 1e-3).all()
-        else:
-            # compute target Q value functions ( ( 1 - terminal ) * gamma * Q(s,pi(s)) + r )
-            Q0, Q1, target_Q = self.sess.run([self.target_Q0,self.target_Q1,self.target_Q], feed_dict={
-                self.obs1: batch['obs1'],
-                self.rewards: batch['rewards'],
-                self.terminals1: batch['terminals1'].astype('float32'),
-            })
-
-        # Get all gradients and perform a "synced update".(TODO)
+        # Get all gradients and perform a "synced update".
         # compute the gradients of actor and critic
-
-        if take_update:
-            ops = [self.actor_grads, self.actor_loss, self.critic_grads, self.critic_loss]
-            actor_grads, actor_loss, critic_grads, critic_loss = self.sess.run(ops, feed_dict={
-                self.obs0: batch['obs0'],
-                self.actions: batch['actions'],
-                self.critic_target: target_Q,
-            })
-
-            self.actor_optimizer.update(actor_grads, stepsize=self.actor_lr)
-            self.critic_optimizer.update(critic_grads, stepsize=self.critic_lr)
-
-            return critic_loss, actor_loss
 
         ops = [self.critic_grads, self.critic_loss]
         critic_grads, critic_loss = self.sess.run(ops, feed_dict={
             self.obs0: batch['obs0'],
             self.actions: batch['actions'],
-            self.critic_target: target_Q,
+            self.obs1: batch['obs1'],
+            self.rewards: batch['rewards'],
+            self.terminals1: batch['terminals1'].astype('float32'),
         })
         self.critic_optimizer.update(critic_grads, stepsize=self.critic_lr)
+
+        if take_update:
+            ops = [self.actor_grads, self.actor_loss]
+            actor_grads, actor_loss = self.sess.run(ops, feed_dict={
+                self.obs0: batch['obs0'],
+            })
+
+            self.actor_optimizer.update(actor_grads, stepsize=self.actor_lr)
+            return critic_loss, actor_loss
 
         return critic_loss, 0
 

@@ -15,7 +15,7 @@ from mpi4py import MPI
 def train(env, nb_epochs, nb_epoch_cycles, render_eval, reward_scale, render, param_noise, actor, critic0, critic1,
     normalize_returns, normalize_observations, critic_l2_reg, actor_lr, critic_lr, action_noise,
     popart, gamma, clip_norm, nb_train_steps, nb_rollout_steps, nb_eval_steps, batch_size, memory,
-    tau=0.005, eval_env=None, param_noise_adaption_interval=50,
+    tau=0.005, eval_env=None, param_noise_adaption_interval=50, initial_random_steps=1e4,
     policy_and_target_update_period=2
     ):
     rank = MPI.COMM_WORLD.Get_rank()
@@ -72,7 +72,10 @@ def train(env, nb_epochs, nb_epoch_cycles, render_eval, reward_scale, render, pa
                 # Perform rollouts.
                 for t_rollout in range(nb_rollout_steps):
                     # Predict next action.
-                    action, q = agent.pi(obs, apply_noise=True, compute_Q=True)
+                    if t < initial_random_steps:
+                        action = np.random.uniform(low=-1,high=1,size=env.action_space.shape)
+                    else:
+                        action, q = agent.pi(obs, apply_noise=True, compute_Q=False)
                     assert action.shape == env.action_space.shape
 
                     # Execute next action.
@@ -88,7 +91,6 @@ def train(env, nb_epochs, nb_epoch_cycles, render_eval, reward_scale, render, pa
 
                     # Book-keeping.
                     epoch_actions.append(action)
-                    epoch_qs.append(q)
                     agent.store_transition(obs, action, r, new_obs, done)
                     obs = new_obs
 
@@ -116,7 +118,7 @@ def train(env, nb_epochs, nb_epoch_cycles, render_eval, reward_scale, render, pa
                         epoch_adaptive_distances.append(distance)
 
                     # use take_update flag to control actor training
-                    take_update = t_train % policy_and_target_update_period
+                    take_update =( t_train % policy_and_target_update_period == 0 )
                     cl, al = agent.train(take_update=take_update)
                     epoch_critic_losses.append(cl)
 
@@ -151,10 +153,10 @@ def train(env, nb_epochs, nb_epoch_cycles, render_eval, reward_scale, render, pa
             stats = agent.get_stats()
             combined_stats = stats.copy()
             combined_stats['rollout/return'] = np.mean(epoch_episode_rewards)
+            combined_stats['rollout/return_latest'] = np.mean(epoch_episode_rewards[-1])
             combined_stats['rollout/return_history'] = np.mean(episode_rewards_history)
             combined_stats['rollout/episode_steps'] = np.mean(epoch_episode_steps)
             combined_stats['rollout/actions_mean'] = np.mean(epoch_actions)
-            combined_stats['rollout/Q_mean'] = np.mean(epoch_qs)
             combined_stats['train/loss_actor'] = np.mean(epoch_actor_losses)
             combined_stats['train/loss_critic'] = np.mean(epoch_critic_losses)
             combined_stats['train/param_noise_distance'] = np.mean(epoch_adaptive_distances)

@@ -56,8 +56,8 @@ def run(env_id, seed, noise_type, layer_norm, evaluation, **kwargs):
 
     # Configure components.
     memory = Memory(limit=int(1e6), action_shape=env.action_space.shape, observation_shape=env.observation_space.shape)
-    critic0 = AHECritic(layer_norm=layer_norm,name="primary critic")
-    critic1 = AHECritic(layer_norm=layer_norm,name="supplementary critic")
+    critic0 = AHECritic(layer_norm=layer_norm,name="primary_critic")
+    critic1 = AHECritic(layer_norm=layer_norm,name="supplementary_critic")
     actor = AHEActor(nb_actions, layer_norm=layer_norm)
 
     # Seed everything to make things reproducible.
@@ -82,9 +82,12 @@ def run(env_id, seed, noise_type, layer_norm, evaluation, **kwargs):
 
 
 def parse_args():
+
+
+    print("[Tiancheng] Now we're using td3")
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    parser.add_argument('--env-id', type=str, default='HalfCheetah-v1')
+    parser.add_argument('--env-id', type=str, default='HalfCheetah-v2')
     boolean_flag(parser, 'render-eval', default=False)
     boolean_flag(parser, 'layer-norm', default=True)
     boolean_flag(parser, 'render', default=False)

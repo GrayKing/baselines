@@ -92,10 +92,6 @@ class TD3(object):
         self.critic0 = critic0
         self.critic1 = critic1
 
-        # merge trainable variables into one set
-        self.critic_vars = self.critic0.vars + self.critic1.vars
-        self.critic_trainable_vars = self.critic0.trainable_vars + self.critic1.trainable_vars
-
         self.actor = actor
         self.actor_lr = actor_lr
         self.critic_lr = critic_lr
@@ -140,7 +136,6 @@ class TD3(object):
         target_critic1 = copy(critic1)
         target_critic1.name = 'target_critic1'
         self.target_critic1 = target_critic1
-        self.target_critic_vars = target_critic0.vars + target_critic1.vars
 
         # Create networks and core TF parts that are shared across setup parts.
         
@@ -173,13 +168,26 @@ class TD3(object):
             self.ret_rms)
 
         # Q_obs1 Q(s',pi'(s)) is built from next state s'(observation), target actor pi', and denormalization  
-        Q_obs1_val0 = denormalize(target_critic0(normalized_obs1, target_actor(normalized_obs1)), self.ret_rms)
-        Q_obs1_val1 = denormalize(target_critic1(normalized_obs1, target_actor(normalized_obs1)), self.ret_rms)
 
-        Q_obs = tf.reduce_min(tf.concat([Q_obs1_val0,Q_obs1_val1],axis=1),axis=1)
+        target_action = target_actor(normalized_obs1)
+        Q_obs1_val0 = denormalize(target_critic0(normalized_obs1, target_action), self.ret_rms)
+        Q_obs1_val1 = denormalize(target_critic1(normalized_obs1, target_action), self.ret_rms)
 
-        self.target_Q1 = self.rewards + (1. - self.terminals1) * gamma * Q_obs
-        self.target_Q = self.target_Q2 = self.target_Q1
+        Q_obs = tf.reshape(tf.reduce_min(tf.concat([Q_obs1_val0,Q_obs1_val1],axis=1),axis=1),shape=[-1,1])
+
+        self.target_Q = self.rewards + (1. - self.terminals1) * gamma * Q_obs
+        self.target_Q0 = self.target_Q1 = self.target_Q
+
+        print("[Tiancheng] Shape of target Q",self.target_Q.shape)
+
+        # merge trainable variables into one set
+        self.target_critic_vars = target_critic0.vars + target_critic1.vars
+        self.critic_vars = self.critic0.vars + self.critic1.vars
+        self.critic_trainable_vars = self.critic0.trainable_vars + self.critic1.trainable_vars
+        print("[Tiancheng] Re-asure Trainable Vars")
+        print("[Tiancheng] Critic 0 Trainable Vars", self.critic0.trainable_vars)
+        print("[Tiancheng] Critic 1 Trainable Vars", self.critic1.trainable_vars)
+
 
         # Set up parts.
         if self.param_noise is not None:
@@ -256,7 +264,12 @@ class TD3(object):
             critic_reg_vars = [var for var in self.critic_trainable_vars if 'kernel' in var.name and 'output' not in var.name]
             for var in critic_reg_vars:
                 logger.info('  regularizing: {}'.format(var.name))
+
             logger.info('  applying l2 regularization with {}'.format(self.critic_l2_reg))
+
+            print("[Tiancheng] Reg Vars:", critic_reg_vars)
+            print("[Tiancheng] Trainable Vars:",self.critic_trainable_vars)
+
             critic_reg = tc.layers.apply_regularization(
                 tc.layers.l2_regularizer(self.critic_l2_reg),
                 weights_list=critic_reg_vars
@@ -374,7 +387,7 @@ class TD3(object):
             # compute old mean, old std and target Q values 
             # old mean and std is used for normalization 
             # and target Q values for 
-            old_mean, old_std, target_Q = self.sess.run([self.ret_rms.mean, self.ret_rms.std, self.target_Q], feed_dict={
+            old_mean, old_std, Q0, Q1, target_Q = self.sess.run([self.ret_rms.mean, self.ret_rms.std, self.target_Q0,self.target_Q1,self.target_Q], feed_dict={
                 self.obs1: batch['obs1'],
                 self.rewards: batch['rewards'],
                 self.terminals1: batch['terminals1'].astype('float32'),
@@ -398,15 +411,14 @@ class TD3(object):
             # assert (np.abs(target_Q - target_Q_new) < 1e-3).all()
         else:
             # compute target Q value functions ( ( 1 - terminal ) * gamma * Q(s,pi(s)) + r )
-            target_Q = self.sess.run(self.target_Q, feed_dict={
+            Q0, Q1, target_Q = self.sess.run([self.target_Q0,self.target_Q1,self.target_Q], feed_dict={
                 self.obs1: batch['obs1'],
                 self.rewards: batch['rewards'],
                 self.terminals1: batch['terminals1'].astype('float32'),
             })
 
         # Get all gradients and perform a "synced update".(TODO)
-
-        # compute the gradients of actor and critic 
+        # compute the gradients of actor and critic
         ops = [self.actor_grads, self.actor_loss, self.critic_grads, self.critic_loss]
         actor_grads, actor_loss, critic_grads, critic_loss = self.sess.run(ops, feed_dict={
             self.obs0: batch['obs0'],

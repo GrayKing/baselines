@@ -80,7 +80,7 @@ class EnsembleDDPG(object):
         batch_size=100, observation_range=(-5., 5.), action_range=(-1., 1.), return_range=(-np.inf, np.inf),
         adaptive_param_noise=True, adaptive_param_noise_policy_threshold=.1,
         action_noise_scale=0.2, action_noise_clip=0.5,
-        critic_l2_reg=0., actor_lr=1e-4, critic_lr=1e-3, clip_norm=None, reward_scale=1.):
+        critic_l2_reg=0., actor_lr=1e-4, critic_lr=1e-3, clip_norm=None, reward_scale=1., use_mpi_adam=False):
         # Inputs.
         self.obs0 = tf.placeholder(tf.float32, shape=(None,) + observation_shape, name='obs0')
         self.obs1 = tf.placeholder(tf.float32, shape=(None,) + observation_shape, name='obs1')
@@ -100,6 +100,9 @@ class EnsembleDDPG(object):
         self.action_range = action_range
         self.return_range = return_range
         self.observation_range = observation_range
+
+        # settings
+        self.use_mpi_adam = use_mpi_adam
 
         # set the list of critic
         self.critics = critics
@@ -235,10 +238,20 @@ class EnsembleDDPG(object):
         self.setup_target_network_updates()
 
     def setup_target_network_updates(self):
-        actor_init_updates, actor_soft_updates = get_target_updates(self.actor.vars, self.target_actor.vars, self.tau)
-        critic_init_updates, critic_soft_updates = get_target_updates(self.critic_vars, self.target_critic_vars, self.tau)
-        self.target_init_updates = [actor_init_updates, critic_init_updates]
-        self.target_soft_updates = [actor_soft_updates, critic_soft_updates]
+        if self.use_mpi_adam:
+            actor_init_updates, actor_soft_updates = get_target_updates(self.actor.vars, self.target_actor.vars,
+                                                                        self.tau)
+            critic_init_updates, critic_soft_updates = get_target_updates(self.critic_vars, self.target_critic_vars,
+                                                                          self.tau)
+            self.target_init_updates = [actor_init_updates, critic_init_updates]
+            self.target_soft_updates = [actor_soft_updates, critic_soft_updates]
+        else:
+            actor_init_updates, actor_soft_updates = get_target_updates(self.actor.trainable_vars,
+                                                                        self.target_actor.vars, self.tau)
+            critic_init_updates, critic_soft_updates = get_target_updates(self.critic_trainable_vars,
+                                                                          self.target_critic_vars, self.tau)
+            self.target_init_updates = [actor_init_updates, critic_init_updates]
+            self.target_soft_updates = [actor_soft_updates, critic_soft_updates]
 
     def setup_param_noise(self, normalized_obs0):
         assert self.param_noise is not None
@@ -294,9 +307,18 @@ class EnsembleDDPG(object):
         print("[Tiancheng Shape] Actor Grad Variance", self.actor_grad_var.shape)
         print("[Tiancheng Shape] Actor Grad VarStd", self.actor_grad_var_std.shape)
 
+        # add support to single-threaded adam
         self.actor_grads = U.flatgrad(self.actor_loss, self.actor.trainable_vars, clip_norm=self.clip_norm)
-        self.actor_optimizer = MpiAdam(var_list=self.actor.trainable_vars,
-            beta1=0.9, beta2=0.999, epsilon=1e-08)
+        if self.use_mpi_adam:
+            self.actor_optimizer = MpiAdam(var_list=self.actor.trainable_vars,
+                beta1=0.9, beta2=0.999, epsilon=1e-08)
+        else:
+            self.actor_grads = list(
+                zip(tf.gradients(self.actor_loss, self.actor.trainable_vars), self.actor.trainable_vars))
+
+            self.actor_optimizer = tf.train.AdamOptimizer(learning_rate=self.actor_lr,beta1=0.9, beta2=0.999, epsilon=1e-08)
+            self.actor_train = self.actor_optimizer.apply_gradients(self.actor_grads)
+
 
     def setup_critic_optimizer(self):
         logger.info('setting up critic optimizer')
@@ -348,8 +370,16 @@ class EnsembleDDPG(object):
         print("[Tiancheng Shape] Critic Grad Variance", self.critic_grad_var.shape)
         print("[Tiancheng Shape] Critic Grad VarStd", self.critic_grad_var_std.shape)
 
-        self.critic_optimizer = MpiAdam(var_list=self.critic_trainable_vars,
-            beta1=0.9, beta2=0.999, epsilon=1e-08)
+        # add support to single-thread adam
+        if self.use_mpi_adam:
+            self.critic_optimizer = MpiAdam(var_list=self.critic_trainable_vars,
+                                            beta1=0.9, beta2=0.999, epsilon=1e-08)
+        else:
+            self.critic_grads = list(
+                zip(tf.gradients(self.critic_loss, self.critic_trainable_vars), self.critic_trainable_vars))
+            self.critic_optimizer = tf.train.AdamOptimizer(learning_rate=self.critic_lr, beta1=0.9, beta2=0.999,
+                                                           epsilon=1e-08)
+            self.critic_train = self.critic_optimizer.apply_gradients(self.critic_grads)
 
     def setup_popart(self):
         # See https://arxiv.org/pdf/1602.07714.pdf for details.
@@ -511,32 +541,52 @@ class EnsembleDDPG(object):
         # compute the gradients of actor and critic
 
 
-        ops = [self.critic_grads, self.critic_loss]
-        critic_grads, critic_loss = self.sess.run(ops, feed_dict={
-            self.obs0: batch['obs0'],
-            self.actions: batch['actions'],
-            self.obs1: batch['obs1'],
-            self.rewards: batch['rewards'],
-            self.terminals1: batch['terminals1'].astype('float32'),
-        })
-        self.critic_optimizer.update(critic_grads, stepsize=self.critic_lr)
+        if self.use_mpi_adam:
+            ops = [self.critic_grads, self.critic_loss]
 
-        if take_update:
-            ops = [self.actor_grads, self.actor_loss]
-            actor_grads, actor_loss= self.sess.run(ops, feed_dict={
-                self.obs0: batch['obs0']
+            critic_grads, critic_loss = self.sess.run(ops, feed_dict={
+                self.obs0: batch['obs0'],
+                self.actions: batch['actions'],
+                self.obs1: batch['obs1'],
+                self.rewards: batch['rewards'],
+                self.terminals1: batch['terminals1'].astype('float32'),
             })
+            self.critic_optimizer.update(critic_grads, stepsize=self.critic_lr)
 
-            self.actor_optimizer.update(actor_grads, stepsize=self.actor_lr)
-            return critic_loss, actor_loss
+            if take_update:
+                ops = [self.actor_grads, self.actor_loss]
+                actor_grads, actor_loss = self.sess.run(ops, feed_dict={
+                    self.obs0: batch['obs0'],
+                })
+
+                self.actor_optimizer.update(actor_grads, stepsize=self.actor_lr)
+                return critic_loss, actor_loss
+
+        else:
+            ops = [self.critic_train, self.critic_grads, self.critic_loss]
+
+            _, critic_grads, critic_loss = self.sess.run(ops, feed_dict={
+                self.obs0: batch['obs0'],
+                self.actions: batch['actions'],
+                self.obs1: batch['obs1'],
+                self.rewards: batch['rewards'],
+                self.terminals1: batch['terminals1'].astype('float32'),
+            })
+            if take_update:
+                ops = [self.actor_train, self.actor_grads, self.actor_loss]
+                _, actor_grads, actor_loss = self.sess.run(ops, feed_dict={
+                    self.obs0: batch['obs0'],
+                })
+                return critic_loss, actor_loss
 
         return critic_loss, 0
 
     def initialize(self, sess):
         self.sess = sess
         self.sess.run(tf.global_variables_initializer())
-        self.actor_optimizer.sync()
-        self.critic_optimizer.sync()
+        if self.use_mpi_adam:
+            self.actor_optimizer.sync()
+            self.critic_optimizer.sync()
         self.sess.run(self.target_init_updates)
 
     def update_target_net(self):

@@ -16,7 +16,7 @@ def train(env, nb_epochs, nb_epoch_cycles, render_eval, reward_scale, render, pa
     normalize_returns, normalize_observations, critic_l2_reg, actor_lr, critic_lr, action_noise,
     popart, gamma, clip_norm, nb_train_steps, nb_rollout_steps, nb_eval_steps, batch_size, memory,
     tau=0.005, eval_env=None, param_noise_adaption_interval=50,initial_random_steps=1e4,
-    policy_and_target_update_period=1
+    policy_and_target_update_period=1,use_mpi_adam=False
     ):
     rank = MPI.COMM_WORLD.Get_rank()
 
@@ -27,7 +27,7 @@ def train(env, nb_epochs, nb_epoch_cycles, render_eval, reward_scale, render, pa
         gamma=gamma, tau=tau, normalize_returns=normalize_returns, normalize_observations=normalize_observations,
         batch_size=batch_size, action_noise=action_noise, param_noise=param_noise, critic_l2_reg=critic_l2_reg,
         actor_lr=actor_lr, critic_lr=critic_lr, enable_popart=popart, clip_norm=clip_norm,
-        reward_scale=reward_scale)
+        reward_scale=reward_scale,use_mpi_adam=use_mpi_adam)
     logger.info('Using agent with the following configuration:')
     logger.info(str(agent.__dict__.items()))
 

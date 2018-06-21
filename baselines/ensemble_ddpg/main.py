@@ -17,7 +17,7 @@ import tensorflow as tf
 from mpi4py import MPI
 
 # TODO: need to move the actor and critic to AHE version
-def run(env_id, seed, noise_type, layer_norm, evaluation, num_critics, **kwargs):
+def run(env_id, seed, noise_type, layer_norm, evaluation, num_critics, arch, **kwargs):
     # Configure things.
     rank = MPI.COMM_WORLD.Get_rank()
     if rank != 0:
@@ -55,9 +55,13 @@ def run(env_id, seed, noise_type, layer_norm, evaluation, num_critics, **kwargs)
             raise RuntimeError('unknown noise type "{}"'.format(current_noise_type))
 
     # Configure components.
-    memory = Memory(limit=int(5e4), action_shape=env.action_space.shape, observation_shape=env.observation_space.shape)
-    critics = [Critic(layer_norm=layer_norm,name="critic_"+str(i)) for i in range(num_critics)]
-    actor = Actor(nb_actions, layer_norm=layer_norm)
+    memory = Memory(limit=int(1e6), action_shape=env.action_space.shape, observation_shape=env.observation_space.shape)
+    if arch == "TD3":
+        critics = [AHECritic(layer_norm=layer_norm,name="critic_"+str(i)) for i in range(num_critics)]
+        actor = AHEActor(nb_actions, layer_norm=layer_norm)
+    else:
+        critics = [Critic(layer_norm=layer_norm,name="critic_"+str(i)) for i in range(num_critics)]
+        actor = Actor(nb_actions, layer_norm=layer_norm)
 
     # Seed everything to make things reproducible.
     seed = seed + 1000000 * rank
@@ -109,7 +113,11 @@ def parse_args():
     parser.add_argument('--noise-type', type=str, default='normal_0.1')  # choices are adaptive-param_xx, ou_xx, normal_xx, none
     parser.add_argument('--num-timesteps', type=int, default=None)
     parser.add_argument('--num-critics', type=int, default=3)
-    parser.add_argument('--use-mpi-adam', type=bool, default=False)
+    parser.add_argument('--use-mpi-adam', type=bool, default=True)
+
+    parser.add_argument('--arch',default=["oldDDPG"],type=str,choices=["TD3","oldDDPG"])
+    parser.add_argument('--stop-actor-steps',type=int,default=None)
+    parser.add_argument('--stop-critic-steps',type=int,default=None)
 
     parser.add_argument('--exp-name',type=str,default=None)
     boolean_flag(parser, 'evaluation', default=False)
@@ -126,9 +134,10 @@ def parse_args():
 if __name__ == '__main__':
     args = parse_args()
     if MPI.COMM_WORLD.Get_rank() == 0:
-        if args.exp_name is not None:
-            logger.configure(dir=args.exp_name)
+        if args["exp_name"] is not None:
+            logger.configure(dir=args["exp_name"])
         else:
             logger.configure()
     # Run actual script.
+    del args["exp_name"]
     run(**args)

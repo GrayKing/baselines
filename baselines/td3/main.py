@@ -17,7 +17,7 @@ import tensorflow as tf
 from mpi4py import MPI
 
 # TODO: need to move the actor and critic to AHE version
-def run(env_id, seed, noise_type, layer_norm, evaluation, **kwargs):
+def run(env_id, seed, noise_type, layer_norm, evaluation, arch, **kwargs):
     # Configure things.
     rank = MPI.COMM_WORLD.Get_rank()
     if rank != 0:
@@ -56,9 +56,14 @@ def run(env_id, seed, noise_type, layer_norm, evaluation, **kwargs):
 
     # Configure components.
     memory = Memory(limit=int(1e6), action_shape=env.action_space.shape, observation_shape=env.observation_space.shape)
-    critic0 = AHECritic(layer_norm=layer_norm,name="primary_critic")
-    critic1 = AHECritic(layer_norm=layer_norm,name="supplementary_critic")
-    actor = AHEActor(nb_actions, layer_norm=layer_norm)
+    if arch is "TD3":
+        critic0 = AHECritic(layer_norm=layer_norm,name="primary_critic")
+        critic1 = AHECritic(layer_norm=layer_norm,name="supplementary_critic")
+        actor = AHEActor(nb_actions, layer_norm=layer_norm)
+    else:
+        critic0 = Critic(layer_norm=layer_norm, name="primary_critic")
+        critic1 = Critic(layer_norm=layer_norm, name="supplementary_critic")
+        actor = Actor(nb_actions, layer_norm=layer_norm)
 
     # Seed everything to make things reproducible.
     seed = seed + 1000000 * rank
@@ -113,6 +118,12 @@ def parse_args():
 
     parser.add_argument('--exp-name', type=str, default=None)
 
+    parser.add_argument('--arch',type=str,choices=["TD3","oldDDPG"])
+
+    parser.add_argument('--stop-actor-steps',type=int,default=None)
+    parser.add_argument('--stop-critic-steps',type=int,default=None)
+
+
     args = parser.parse_args()
     # we don't directly specify timesteps for this script, so make sure that if we do specify them
     # they agree with the other parameters
@@ -126,9 +137,10 @@ def parse_args():
 if __name__ == '__main__':
     args = parse_args()
     if MPI.COMM_WORLD.Get_rank() == 0:
-        if args.exp_name is not None:
-            logger.configure(dir=args.exp_name)
+        if args["exp_name"] is not None:
+            logger.configure(dir=args["exp_name"])
         else:
             logger.configure()
+    del args["exp_name"]
     # Run actual script.
     run(**args)

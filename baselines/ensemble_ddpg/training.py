@@ -16,7 +16,7 @@ def train(env, nb_epochs, nb_epoch_cycles, render_eval, reward_scale, render, pa
     normalize_returns, normalize_observations, critic_l2_reg, actor_lr, critic_lr, action_noise,
     popart, gamma, clip_norm, nb_train_steps, nb_rollout_steps, nb_eval_steps, batch_size, memory,
     tau=0.005, eval_env=None, param_noise_adaption_interval=50,initial_random_steps=1e4,
-    policy_and_target_update_period=1,use_mpi_adam=False
+    policy_and_target_update_period=1,use_mpi_adam=False,stop_actor_steps=None, stop_critic_steps=None
     ):
     rank = MPI.COMM_WORLD.Get_rank()
 
@@ -119,13 +119,20 @@ def train(env, nb_epochs, nb_epoch_cycles, render_eval, reward_scale, render, pa
 
                     # use take_update flag to control actor training
                     take_update = ( t_train % policy_and_target_update_period == 0 )
+                    stop_actor_training = False
+                    stop_critic_training = False
+                    if stop_actor_steps is not None and t > stop_actor_steps:
+                        stop_actor_training = True
+                    if stop_critic_steps is not None and t > stop_critic_steps:
+                        stop_critic_training = True
+
                     cl, al = agent.train(take_update=take_update)
                     epoch_critic_losses.append(cl)
 
                     # use take_update flag to control target updating
                     if take_update:
                         epoch_actor_losses.append(al)
-                        agent.update_target_net()
+                        agent.update_target_net(stop_critic_training,stop_actor_training)
 
                 # Evaluate.
                 eval_episode_rewards = []

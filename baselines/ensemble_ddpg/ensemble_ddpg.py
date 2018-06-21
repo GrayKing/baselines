@@ -245,6 +245,9 @@ class EnsembleDDPG(object):
                                                                           self.tau)
             self.target_init_updates = [actor_init_updates, critic_init_updates]
             self.target_soft_updates = [actor_soft_updates, critic_soft_updates]
+
+            self.target_soft_update_actor = actor_soft_updates
+            self.target_soft_update_critic = critic_soft_updates
         else:
             actor_init_updates, actor_soft_updates = get_target_updates(self.actor.trainable_vars,
                                                                         self.target_actor.vars, self.tau)
@@ -252,6 +255,9 @@ class EnsembleDDPG(object):
                                                                           self.target_critic_vars, self.tau)
             self.target_init_updates = [actor_init_updates, critic_init_updates]
             self.target_soft_updates = [actor_soft_updates, critic_soft_updates]
+
+            self.target_soft_update_actor = actor_soft_updates
+            self.target_soft_update_critic = critic_soft_updates
 
     def setup_param_noise(self, normalized_obs0):
         assert self.param_noise is not None
@@ -542,9 +548,9 @@ class EnsembleDDPG(object):
 
 
         if self.use_mpi_adam:
-            ops = [self.actor_grad_var_std,tf.norm(self.actor_grad_mean),self.critic_grads, self.critic_loss]
+            ops = [self.critic_grads, self.critic_loss]
 
-            actor_grad_var_std, actor_grad_mean_norm,critic_grads, critic_loss = self.sess.run(ops, feed_dict={
+            critic_grads, critic_loss = self.sess.run(ops, feed_dict={
                 self.obs0: batch['obs0'],
                 self.actions: batch['actions'],
                 self.obs1: batch['obs1'],
@@ -563,9 +569,9 @@ class EnsembleDDPG(object):
                 return critic_loss, actor_loss
 
         else:
-            ops = [self.actor_grad_var_std,tf.norm(self.actor_grad_mean),self.critic_train, self.critic_grads, self.critic_loss]
+            ops = [self.critic_train, self.critic_grads, self.critic_loss]
 
-            actor_grad_var_std, actor_grad_mean_norm,_, critic_grads, critic_loss = self.sess.run(ops, feed_dict={
+            _, critic_grads, critic_loss = self.sess.run(ops, feed_dict={
                 self.obs0: batch['obs0'],
                 self.actions: batch['actions'],
                 self.obs1: batch['obs1'],
@@ -579,7 +585,7 @@ class EnsembleDDPG(object):
                 })
                 return critic_loss, actor_loss
 
-        return actor_grad_var_std, actor_grad_mean_norm, critic_loss, 0
+        return critic_loss, 0
 
     def initialize(self, sess):
         self.sess = sess
@@ -589,7 +595,13 @@ class EnsembleDDPG(object):
             self.critic_optimizer.sync()
         self.sess.run(self.target_init_updates)
 
-    def update_target_net(self):
+    def update_target_net(self,stop_critic_training,stop_actor_training):
+        if stop_actor_training:
+            self.sess.run(self.target_soft_update_critic)
+            return
+        if stop_critic_training:
+            self.sess.run(self.target_soft_update_actor)
+            return
         self.sess.run(self.target_soft_updates)
 
     def get_stats(self):

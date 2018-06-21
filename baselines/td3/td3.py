@@ -222,10 +222,26 @@ class TD3(object):
         self.setup_target_network_updates()
 
     def setup_target_network_updates(self):
-        actor_init_updates, actor_soft_updates = get_target_updates(self.actor.trainable_vars, self.target_actor.vars, self.tau)
-        critic_init_updates, critic_soft_updates = get_target_updates(self.critic_trainable_vars, self.target_critic_vars, self.tau)
-        self.target_init_updates = [actor_init_updates, critic_init_updates]
-        self.target_soft_updates = [actor_soft_updates, critic_soft_updates]
+        if self.use_mpi_adam:
+            actor_init_updates, actor_soft_updates = get_target_updates(self.actor.vars, self.target_actor.vars,
+                                                                        self.tau)
+            critic_init_updates, critic_soft_updates = get_target_updates(self.critic_vars, self.target_critic_vars,
+                                                                          self.tau)
+            self.target_init_updates = [actor_init_updates, critic_init_updates]
+            self.target_soft_updates = [actor_soft_updates, critic_soft_updates]
+
+            self.target_soft_update_actor = actor_soft_updates
+            self.target_soft_update_critic = critic_soft_updates
+        else:
+            actor_init_updates, actor_soft_updates = get_target_updates(self.actor.trainable_vars,
+                                                                        self.target_actor.vars, self.tau)
+            critic_init_updates, critic_soft_updates = get_target_updates(self.critic_trainable_vars,
+                                                                          self.target_critic_vars, self.tau)
+            self.target_init_updates = [actor_init_updates, critic_init_updates]
+            self.target_soft_updates = [actor_soft_updates, critic_soft_updates]
+
+            self.target_soft_update_actor = actor_soft_updates
+            self.target_soft_update_critic = critic_soft_updates
 
     def setup_param_noise(self, normalized_obs0):
         assert self.param_noise is not None
@@ -496,8 +512,16 @@ class TD3(object):
             self.critic_optimizer.sync()
         self.sess.run(self.target_init_updates)
 
-    def update_target_net(self):
+    def update_target_net(self,stop_critic_training,stop_actor_training):
+        if stop_actor_training:
+            self.sess.run(self.target_soft_update_critic)
+            return
+        if stop_critic_training:
+            self.sess.run(self.target_soft_update_actor)
+            return
         self.sess.run(self.target_soft_updates)
+
+
 
     def get_stats(self):
         if self.stats_sample is None:

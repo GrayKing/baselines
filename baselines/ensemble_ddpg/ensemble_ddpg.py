@@ -505,7 +505,7 @@ class EnsembleDDPG(object):
         if self.normalize_observations:
             self.obs_rms.update(np.array([obs0]))
 
-    def train(self, take_update=True):
+    def train(self, take_update=True,stop_critic_training=False,stop_actor_training=False):
         # Get a batch.
         batch = self.memory.sample(batch_size=self.batch_size)
 
@@ -557,7 +557,8 @@ class EnsembleDDPG(object):
                 self.rewards: batch['rewards'],
                 self.terminals1: batch['terminals1'].astype('float32'),
             })
-            self.critic_optimizer.update(critic_grads, stepsize=self.critic_lr)
+            if not stop_critic_training:
+                self.critic_optimizer.update(critic_grads, stepsize=self.critic_lr)
 
             if take_update:
                 ops = [self.actor_grads, self.actor_loss]
@@ -565,11 +566,15 @@ class EnsembleDDPG(object):
                     self.obs0: batch['obs0'],
                 })
 
-                self.actor_optimizer.update(actor_grads, stepsize=self.actor_lr)
+                if not stop_actor_training:
+                    self.actor_optimizer.update(actor_grads, stepsize=self.actor_lr)
                 return critic_loss, actor_loss
 
         else:
-            ops = [self.critic_train, self.critic_grads, self.critic_loss]
+            if stop_critic_training:
+                ops = [self.critic_grads, self.critic_grads, self.critic_loss]
+            else:
+                ops = [self.critic_train, self.critic_grads, self.critic_loss]
 
             _, critic_grads, critic_loss = self.sess.run(ops, feed_dict={
                 self.obs0: batch['obs0'],
@@ -579,7 +584,10 @@ class EnsembleDDPG(object):
                 self.terminals1: batch['terminals1'].astype('float32'),
             })
             if take_update:
-                ops = [self.actor_train, self.actor_grads, self.actor_loss]
+                if stop_actor_training:
+                    ops = [self.actor_grads, self.actor_grads, self.actor_loss]
+                else:
+                    ops = [self.actor_train, self.actor_grads, self.actor_loss]
                 _, actor_grads, actor_loss = self.sess.run(ops, feed_dict={
                     self.obs0: batch['obs0'],
                 })
@@ -595,13 +603,7 @@ class EnsembleDDPG(object):
             self.critic_optimizer.sync()
         self.sess.run(self.target_init_updates)
 
-    def update_target_net(self,stop_critic_training,stop_actor_training):
-        if stop_actor_training:
-            self.sess.run(self.target_soft_update_critic)
-            return
-        if stop_critic_training:
-            self.sess.run(self.target_soft_update_actor)
-            return
+    def update_target_net(self):
         self.sess.run(self.target_soft_updates)
 
     def get_stats(self):

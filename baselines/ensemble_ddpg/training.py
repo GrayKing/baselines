@@ -126,13 +126,13 @@ def train(env, nb_epochs, nb_epoch_cycles, render_eval, reward_scale, render, pa
                     if stop_critic_steps is not None and t > stop_critic_steps:
                         stop_critic_training = True
 
-                    cl, al = agent.train(take_update=take_update)
+                    cl, al = agent.train(take_update,stop_critic_training,stop_actor_training)
                     epoch_critic_losses.append(cl)
 
                     # use take_update flag to control target updating
                     if take_update:
                         epoch_actor_losses.append(al)
-                        agent.update_target_net(stop_critic_training,stop_actor_training)
+                        agent.update_target_net()
 
                 # Evaluate.
                 eval_episode_rewards = []

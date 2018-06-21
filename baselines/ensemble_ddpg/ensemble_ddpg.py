@@ -542,9 +542,9 @@ class EnsembleDDPG(object):
 
 
         if self.use_mpi_adam:
-            ops = [self.critic_grads, self.critic_loss]
+            ops = [self.actor_grad_var_std,tf.norm(self.actor_grad_mean),self.critic_grads, self.critic_loss]
 
-            critic_grads, critic_loss = self.sess.run(ops, feed_dict={
+            actor_grad_var_std, actor_grad_mean_norm,critic_grads, critic_loss = self.sess.run(ops, feed_dict={
                 self.obs0: batch['obs0'],
                 self.actions: batch['actions'],
                 self.obs1: batch['obs1'],
@@ -563,9 +563,9 @@ class EnsembleDDPG(object):
                 return critic_loss, actor_loss
 
         else:
-            ops = [self.critic_train, self.critic_grads, self.critic_loss]
+            ops = [self.actor_grad_var_std,tf.norm(self.actor_grad_mean),self.critic_train, self.critic_grads, self.critic_loss]
 
-            _, critic_grads, critic_loss = self.sess.run(ops, feed_dict={
+            actor_grad_var_std, actor_grad_mean_norm,_, critic_grads, critic_loss = self.sess.run(ops, feed_dict={
                 self.obs0: batch['obs0'],
                 self.actions: batch['actions'],
                 self.obs1: batch['obs1'],
@@ -579,7 +579,7 @@ class EnsembleDDPG(object):
                 })
                 return critic_loss, actor_loss
 
-        return critic_loss, 0
+        return actor_grad_var_std, actor_grad_mean_norm, critic_loss, 0
 
     def initialize(self, sess):
         self.sess = sess

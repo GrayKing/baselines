@@ -110,6 +110,9 @@ def parse_args():
     parser.add_argument('--noise-type', type=str, default='normal_0.1')  # choices are adaptive-param_xx, ou_xx, normal_xx, none
     parser.add_argument('--num-timesteps', type=int, default=None)
     boolean_flag(parser, 'evaluation', default=False)
+
+    parser.add_argument('--exp-name', type=str, default=None)
+
     args = parser.parse_args()
     # we don't directly specify timesteps for this script, so make sure that if we do specify them
     # they agree with the other parameters
@@ -123,6 +126,9 @@ def parse_args():
 if __name__ == '__main__':
     args = parse_args()
     if MPI.COMM_WORLD.Get_rank() == 0:
-        logger.configure()
+        if args.exp_name is not None:
+            logger.configure(dir=args.exp_name)
+        else:
+            logger.configure()
     # Run actual script.
     run(**args)

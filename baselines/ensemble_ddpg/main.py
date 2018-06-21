@@ -55,7 +55,7 @@ def run(env_id, seed, noise_type, layer_norm, evaluation, num_critics, **kwargs)
             raise RuntimeError('unknown noise type "{}"'.format(current_noise_type))
 
     # Configure components.
-    memory = Memory(limit=int(1e4), action_shape=env.action_space.shape, observation_shape=env.observation_space.shape)
+    memory = Memory(limit=int(5e4), action_shape=env.action_space.shape, observation_shape=env.observation_space.shape)
     critics = [Critic(layer_norm=layer_norm,name="critic_"+str(i)) for i in range(num_critics)]
     actor = Actor(nb_actions, layer_norm=layer_norm)
 
@@ -103,13 +103,15 @@ def parse_args():
     parser.add_argument('--clip-norm', type=float, default=None)
     parser.add_argument('--nb-epochs', type=int, default=500)  # with default settings, perform 1M steps total
     parser.add_argument('--nb-epoch-cycles', type=int, default=20)
-    parser.add_argument('--nb-train-steps', type=int, default=50)  # per epoch cycle and MPI worker
+    parser.add_argument('--nb-train-steps', type=int, default=100)  # per epoch cycle and MPI worker
     parser.add_argument('--nb-eval-steps', type=int, default=100)  # per epoch cycle and MPI worker
     parser.add_argument('--nb-rollout-steps', type=int, default=100)  # per epoch cycle and MPI worker
     parser.add_argument('--noise-type', type=str, default='normal_0.1')  # choices are adaptive-param_xx, ou_xx, normal_xx, none
     parser.add_argument('--num-timesteps', type=int, default=None)
     parser.add_argument('--num-critics', type=int, default=3)
-    parser.add_argument('--use-mpi-adam', type=bool, default=True)
+    parser.add_argument('--use-mpi-adam', type=bool, default=False)
+
+    parser.add_argument('--exp-name',type=str,default=None)
     boolean_flag(parser, 'evaluation', default=False)
     args = parser.parse_args()
     # we don't directly specify timesteps for this script, so make sure that if we do specify them
@@ -124,6 +126,9 @@ def parse_args():
 if __name__ == '__main__':
     args = parse_args()
     if MPI.COMM_WORLD.Get_rank() == 0:
-        logger.configure()
+        if args.exp_name is not None:
+            logger.configure(dir=args.exp_name)
+        else:
+            logger.configure()
     # Run actual script.
     run(**args)

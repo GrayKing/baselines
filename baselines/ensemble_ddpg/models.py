@@ -126,14 +126,13 @@ class AHECritic(Model):
             if reuse:
                 scope.reuse_variables()
 
-            x = obs
+            x = tf.concat([obs, action], axis=-1)
             x = tf.layers.dense(x, 400, kernel_initializer=xavier_initializer(),
                                 bias_initializer=xavier_initializer())
             if self.layer_norm:
                 x = tc.layers.layer_norm(x, center=True, scale=True)
             x = tf.nn.relu(x)
 
-            x = tf.concat([x, action], axis=-1)
             x = tf.layers.dense(x, 300, kernel_initializer=xavier_initializer(),
                                 bias_initializer=xavier_initializer())
             if self.layer_norm:

@@ -9,6 +9,7 @@ if __name__ == '__main__':
     #   on Half-Cheetah
     exp_prefix = 'test-ddpg'
     vg = VariantGenerator()
+    vg.add('log_dir',['/home/tianchej/train/'])
     vg.add('env_id',['HalfCheetah-v2','Hopper-v2','InvertedPendulum-v2'])
 
     # select random seeds from 0 to 4

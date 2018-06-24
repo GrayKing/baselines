@@ -1,6 +1,5 @@
 import sys
 import json
-from baselines.her.util import mpi_fork
 import experiments.config as config
 import time
 import os

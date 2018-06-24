@@ -17,7 +17,7 @@ import tensorflow as tf
 from mpi4py import MPI
 
 # TODO: need to move the actor and critic to AHE version
-def run(env_id, seed, noise_type, layer_norm, evaluation, arch, **kwargs):
+def run(env_id, seed, noise_type, layer_norm, evaluation, arch, replay_size, **kwargs):
     # Configure things.
     rank = MPI.COMM_WORLD.Get_rank()
     if rank != 0:
@@ -55,12 +55,14 @@ def run(env_id, seed, noise_type, layer_norm, evaluation, arch, **kwargs):
             raise RuntimeError('unknown noise type "{}"'.format(current_noise_type))
 
     # Configure components.
-    memory = Memory(limit=int(1e6), action_shape=env.action_space.shape, observation_shape=env.observation_space.shape)
+    memory = Memory(limit=int(replay_size), action_shape=env.action_space.shape, observation_shape=env.observation_space.shape)
     if arch is "TD3":
+        print("[Tiancheng] Now we're using TD3 architecture")
         critic0 = AHECritic(layer_norm=layer_norm,name="primary_critic")
         critic1 = AHECritic(layer_norm=layer_norm,name="supplementary_critic")
         actor = AHEActor(nb_actions, layer_norm=layer_norm)
     else:
+        print("[Tiancheng] Now we're using old DDPG  architecture")
         critic0 = Critic(layer_norm=layer_norm, name="primary_critic")
         critic1 = Critic(layer_norm=layer_norm, name="supplementary_critic")
         actor = Actor(nb_actions, layer_norm=layer_norm)
@@ -118,10 +120,12 @@ def parse_args():
 
     parser.add_argument('--exp-name', type=str, default=None)
 
-    parser.add_argument('--arch',type=str,choices=["TD3","oldDDPG"])
+    parser.add_argument('--arch',type=str,default="TD3",choices=["TD3","oldDDPG"])
 
     parser.add_argument('--stop-actor-steps',type=int,default=None)
     parser.add_argument('--stop-critic-steps',type=int,default=None)
+
+    parser.add_argument('--replay-size',type=int,default=1000000)
 
 
     args = parser.parse_args()

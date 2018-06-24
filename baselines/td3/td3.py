@@ -66,7 +66,7 @@ def get_perturbed_actor_updates(actor, perturbed_actor, param_noise_stddev):
 class TD3(object):
     def __init__(self, actor, critic0, critic1, memory, observation_shape, action_shape, param_noise=None, action_noise=None,
         gamma=0.99, tau=0.005, normalize_returns=False, enable_popart=False, normalize_observations=False,
-        batch_size=100, observation_range=(-5., 5.), action_range=(-1., 1.), return_range=(-np.inf, np.inf),
+        batch_size=100, observation_range=(-np.inf, np.inf), action_range=(-1., 1.), return_range=(-np.inf, np.inf),
         adaptive_param_noise=True, adaptive_param_noise_policy_threshold=.1,
         action_noise_scale=0.2, action_noise_clip=0.5,
         critic_l2_reg=0., actor_lr=1e-3, critic_lr=1e-3, clip_norm=None, reward_scale=1., use_mpi_adam=False):
@@ -85,6 +85,10 @@ class TD3(object):
         self.memory = memory
         self.normalize_observations = normalize_observations
         self.normalize_returns = normalize_returns
+
+        print("[Tiancheng]",action_noise)
+        print("[Tiancheng]",action_range)
+
         self.action_noise = action_noise
         self.param_noise = param_noise
         self.action_range = action_range
@@ -113,12 +117,7 @@ class TD3(object):
 
         # Observation normalization.
 
-        # TODO: did td3 used normalization ?
-        if self.normalize_observations:
-            with tf.variable_scope('obs_rms'):
-                self.obs_rms = RunningMeanStd(shape=observation_shape)
-        else:
-            self.obs_rms = None
+        self.obs_rms = None
 
         # TODO: what's the performance when we're normalizing the neurons ?
         normalized_obs0 = tf.clip_by_value(normalize(self.obs0, self.obs_rms),
@@ -185,10 +184,9 @@ class TD3(object):
         Q_obs1_val0 = denormalize(target_critic0(normalized_obs1, noisy_target_action), self.ret_rms)
         Q_obs1_val1 = denormalize(target_critic1(normalized_obs1, noisy_target_action), self.ret_rms)
 
-        Q_obs = tf.reshape(tf.reduce_min(tf.concat([Q_obs1_val0,Q_obs1_val1],axis=1),axis=1),shape=[-1,1])
+        Q_obs = tf.reshape(tf.reduce_min(tf.concat([Q_obs1_val0,Q_obs1_val1],axis=-1),axis=-1),shape=[-1,1])
 
         self.target_Q = self.rewards + (1. - self.terminals1) * gamma * Q_obs
-        self.target_Q0 = self.target_Q1 = self.target_Q
 
         print("[Tiancheng] Shape of target Q",self.target_Q.shape)
 
@@ -213,8 +211,6 @@ class TD3(object):
         self.setup_critic_optimizer()
 
         # TODO: what's popart ?
-        if self.normalize_returns and self.enable_popart:
-            self.setup_popart()
         self.setup_stats()
 
         print("[Tiancheng] Len Actor and Target Actor",len(self.actor.trainable_vars),len(self.target_actor.vars))
@@ -244,21 +240,7 @@ class TD3(object):
             self.target_soft_update_critic = critic_soft_updates
 
     def setup_param_noise(self, normalized_obs0):
-        assert self.param_noise is not None
-
-        # Configure perturbed actor.
-        param_noise_actor = copy(self.actor)
-        param_noise_actor.name = 'param_noise_actor'
-        self.perturbed_actor_tf = param_noise_actor(normalized_obs0)
-        logger.info('setting up param noise')
-        self.perturb_policy_ops = get_perturbed_actor_updates(self.actor, param_noise_actor, self.param_noise_stddev)
-
-        # Configure separate copy for stddev adoption.
-        adaptive_param_noise_actor = copy(self.actor)
-        adaptive_param_noise_actor.name = 'adaptive_param_noise_actor'
-        adaptive_actor_tf = adaptive_param_noise_actor(normalized_obs0)
-        self.perturb_adaptive_policy_ops = get_perturbed_actor_updates(self.actor, adaptive_param_noise_actor, self.param_noise_stddev)
-        self.adaptive_policy_distance = tf.sqrt(tf.reduce_mean(tf.square(self.actor_tf - adaptive_actor_tf)))
+        pass
 
     def setup_actor_optimizer(self):
         logger.info('setting up actor optimizer')
@@ -329,24 +311,7 @@ class TD3(object):
             self.critic_train = self.critic_optimizer.apply_gradients(self.critic_grads)
 
     def setup_popart(self):
-        # TODO: important, what's popart and what should we do for it ?
-        # See https://arxiv.org/pdf/1602.07714.pdf for details.
-        self.old_std = tf.placeholder(tf.float32, shape=[1], name='old_std')
-        new_std = self.ret_rms.std
-        self.old_mean = tf.placeholder(tf.float32, shape=[1], name='old_mean')
-        new_mean = self.ret_rms.mean
-
-        self.renormalize_Q_outputs_op = []
-        for vs in [self.critic0.output_vars + self.critic1.output_vars,
-                   self.target_critic0.output_vars + self.target_critic1.output_vars]:
-            assert len(vs) == 2
-            M, b = vs
-            assert 'kernel' in M.name
-            assert 'bias' in b.name
-            assert M.get_shape()[-1] == 1
-            assert b.get_shape()[-1] == 1
-            self.renormalize_Q_outputs_op += [M.assign(M * self.old_std / new_std)]
-            self.renormalize_Q_outputs_op += [b.assign((b * self.old_std + self.old_mean - new_mean) / new_std)]
+        pass
 
     def setup_stats(self):
         ops = []
@@ -419,8 +384,6 @@ class TD3(object):
     def store_transition(self, obs0, action, reward, obs1, terminal1):
         reward *= self.reward_scale
         self.memory.append(obs0, action, reward, obs1, terminal1)
-        if self.normalize_observations:
-            self.obs_rms.update(np.array([obs0]))
 
     def train(self, take_update=True):
         # Get a batch.
@@ -520,8 +483,6 @@ class TD3(object):
             self.sess.run(self.target_soft_update_actor)
             return
         self.sess.run(self.target_soft_updates)
-
-
 
     def get_stats(self):
         if self.stats_sample is None:

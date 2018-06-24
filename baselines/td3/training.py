@@ -16,8 +16,12 @@ def train(env, nb_epochs, nb_epoch_cycles, render_eval, reward_scale, render, pa
     normalize_returns, normalize_observations, critic_l2_reg, actor_lr, critic_lr, action_noise,
     popart, gamma, clip_norm, nb_train_steps, nb_rollout_steps, nb_eval_steps, batch_size, memory,
     tau=0.005, eval_env=None, param_noise_adaption_interval=50, initial_random_steps=1e4,
-    policy_and_target_update_period=2,use_mpi_adam=False,stop_actor_steps=None, stop_critic_steps=None
-    ):
+    policy_and_target_update_period=2,use_mpi_adam=False,stop_actor_steps=None, stop_critic_steps=None,
+          **kwargs):
+
+    if kwargs is not None:
+        logger.info("Warning: redundant hyper-parameters: "+str(kwargs))
+
     rank = MPI.COMM_WORLD.Get_rank()
 
     assert (np.abs(env.action_space.low) == env.action_space.high).all()  # we assume symmetric actions.
@@ -73,7 +77,7 @@ def train(env, nb_epochs, nb_epoch_cycles, render_eval, reward_scale, render, pa
                 for t_rollout in range(nb_rollout_steps):
                     # Predict next action.
                     if t < initial_random_steps:
-                        action = np.random.uniform(low=-1,high=1,size=env.action_space.shape)
+                        action = env.action_space.sample()
                     else:
                         action, q = agent.pi(obs, apply_noise=True, compute_Q=False)
                     assert action.shape == env.action_space.shape

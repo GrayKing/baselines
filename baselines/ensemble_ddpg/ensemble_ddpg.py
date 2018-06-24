@@ -12,6 +12,7 @@ import baselines.common.tf_util as U
 from baselines.common.mpi_running_mean_std import RunningMeanStd
 from mpi4py import MPI
 
+
 def normalize(x, stats):
     if stats is None:
         return x
@@ -23,13 +24,16 @@ def denormalize(x, stats):
         return x
     return x * stats.std + stats.mean
 
+
 def reduce_std(x, axis=None, keepdims=False):
     return tf.sqrt(reduce_var(x, axis=axis, keepdims=keepdims))
+
 
 def reduce_var(x, axis=None, keepdims=False):
     m = tf.reduce_mean(x, axis=axis, keep_dims=True)
     devs_squared = tf.square(x - m)
     return tf.reduce_mean(devs_squared, axis=axis, keep_dims=keepdims)
+
 
 def get_target_updates(vars, target_vars, tau):
     logger.info('setting up target updates ...')
@@ -44,6 +48,7 @@ def get_target_updates(vars, target_vars, tau):
     assert len(soft_updates) == len(vars)
     return tf.group(*init_updates), tf.group(*soft_updates)
 
+
 def exflatgrad(loss, var_list, inter_list=None, clip_norm=None):
     grads = tf.gradients(loss, var_list + inter_list )
     if clip_norm is not None:
@@ -57,6 +62,7 @@ def exflatgrad(loss, var_list, inter_list=None, clip_norm=None):
         tf.reshape(grad if grad is not None else tf.zeros_like(v), [numel(v)])
         for (v, grad) in pairs[:num_vars]
     ]), inter_grads
+
 
 def get_perturbed_actor_updates(actor, perturbed_actor, param_noise_stddev):
     assert len(actor.vars) == len(perturbed_actor.vars)
@@ -76,11 +82,11 @@ def get_perturbed_actor_updates(actor, perturbed_actor, param_noise_stddev):
 
 class EnsembleDDPG(object):
     def __init__(self, actor, critics, memory, observation_shape, action_shape, param_noise=None, action_noise=None,
-        gamma=0.99, tau=0.005, normalize_returns=False, enable_popart=False, normalize_observations=False,
-        batch_size=100, observation_range=(-5., 5.), action_range=(-1., 1.), return_range=(-np.inf, np.inf),
-        adaptive_param_noise=True, adaptive_param_noise_policy_threshold=.1,
-        action_noise_scale=0.2, action_noise_clip=0.5,
-        critic_l2_reg=0., actor_lr=1e-4, critic_lr=1e-3, clip_norm=None, reward_scale=1., use_mpi_adam=False):
+                 gamma=0.99, tau=0.005, normalize_returns=False, enable_popart=False, normalize_observations=False,
+                 batch_size=100, observation_range=(-5., 5.), action_range=(-1., 1.), return_range=(-np.inf, np.inf),
+                 adaptive_param_noise=True, adaptive_param_noise_policy_threshold=.1, action_noise_scale=0.2,
+                 action_noise_clip=0.5,
+                 critic_l2_reg=0., actor_lr=1e-4, critic_lr=1e-3, clip_norm=None, reward_scale=1., use_mpi_adam=False):
         # Inputs.
         self.obs0 = tf.placeholder(tf.float32, shape=(None,) + observation_shape, name='obs0')
         self.obs1 = tf.placeholder(tf.float32, shape=(None,) + observation_shape, name='obs1')

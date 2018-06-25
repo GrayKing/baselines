@@ -1,4 +1,3 @@
-# Created by Xingyu Lin, 25/03/2018
 import time
 from chester.run_exp import run_experiment_lite, VariantGenerator
 

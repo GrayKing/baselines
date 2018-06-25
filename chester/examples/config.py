@@ -9,7 +9,6 @@ DEFAULT_PARAMS = {
     'normalize_observations':True,
     'actor_lr': 0.001,  # critic learning rate
     'critic_lr': 0.001,  # actor learning rate
-    'buffer_size': int(1E6),  # for experience replay
     'critic_l2_reg': 1e-2,
     'popart': False,
     'gamma': 0.99,

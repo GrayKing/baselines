@@ -7,7 +7,7 @@ DEFAULT_PARAMS = {
     'render': False,
     'normalize_returns':False,
     'normalize_observations':True,
-    'actor_lr': 0.001,  # critic learning rate
+    'actor_lr': 0.0001,  # critic learning rate
     'critic_lr': 0.001,  # actor learning rate
     'critic_l2_reg': 1e-2,
     'popart': False,
@@ -16,7 +16,7 @@ DEFAULT_PARAMS = {
     # training
     'seed': 0,
     'nb_epochs':500, # number of epochs
-    'nb_epoch_cycles': 50,  # per epoch
+    'nb_epoch_cycles': 20,  # per epoch
     'nb_rollout_steps': 100,  # sampling batches per cycle
     'nb_train_steps': 100,  # training batches per cycle
     'batch_size': 64,  # per mpi thread, measured in transitions and reduced to even multiple of chunk_length.
